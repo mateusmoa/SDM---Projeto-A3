@@ -1,0 +1,172 @@
+{% extends 'base.html' %}
+
+{% block title %}Painel do Funcionário{% endblock %}
+
+{% block content %}
+<h1>Painel do Funcionário</h1>
+
+<div class="dashboard">
+    <div class="dashboard-card">
+        <h3>Tarefas Pendentes</h3>
+        <div class="number" id="pendingTasksCount">0</div>
+    </div>
+    <div class="dashboard-card">
+        <h3>Tarefas Concluídas</h3>
+        <div class="number" id="completedTasksCount">0</div>
+    </div>
+</div>
+
+<div class="card">
+    <div class="card-header">
+        <h2>Minhas Tarefas</h2>
+    </div>
+    <div class="card-body">
+        <div class="form-group">
+            <select id="taskFilter" class="form-control">
+                <option value="all">Todas as Tarefas</option>
+                <option value="pending">Pendentes</option>
+                <option value="completed">Concluídas</option>
+            </select>
+        </div>
+        
+        <ul class="task-list" id="taskList">
+            <!-- As tarefas serão carregadas dinamicamente aqui -->
+        </ul>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+    document.addEventListener('DOMContentLoaded', function() {
+        const taskList = document.getElementById('taskList');
+        const taskFilter = document.getElementById('taskFilter');
+        const pendingTasksCount = document.getElementById('pendingTasksCount');
+        const completedTasksCount = document.getElementById('completedTasksCount');
+        
+        // Carregar tarefas ao iniciar
+        loadTasks();
+        
+        // Filtrar tarefas ao mudar o select
+        taskFilter.addEventListener('change', loadTasks);
+        
+        // Função para carregar tarefas
+        async function loadTasks() {
+            toggleLoader(true);
+            
+            try {
+                let endpoint = '/funcionario/tarefas';
+                const filterValue = taskFilter.value;
+                
+                if (filterValue === 'pending') {
+                    endpoint = '/funcionario/tarefas/pendentes';
+                } else if (filterValue === 'completed') {
+                    endpoint = '/funcionario/tarefas/concluidas';
+                }
+                
+                const data = await apiRequest(endpoint);
+                
+                // Limpar lista de tarefas
+                taskList.innerHTML = '';
+                
+                if (data.tarefas.length === 0) {
+                    taskList.innerHTML = '<p>Nenhuma tarefa encontrada.</p>';
+                    return;
+                }
+                
+                // Renderizar tarefas
+                data.tarefas.forEach(task => {
+                    const taskItem = document.createElement('li');
+                    taskItem.className = 'task-item';
+                    
+                    const taskInfo = document.createElement('div');
+                    taskInfo.className = 'task-info';
+                    
+                    const taskTitle = document.createElement('div');
+                    taskTitle.className = 'task-title';
+                    taskTitle.textContent = task.titulo;
+                    
+                    const taskDesc = document.createElement('div');
+                    taskDesc.className = 'task-desc';
+                    taskDesc.textContent = task.descricao || 'Sem descrição';
+                    
+                    const taskMeta = document.createElement('div');
+                    taskMeta.className = 'task-meta';
+                    taskMeta.innerHTML = `
+                        <span>Status: <span class="badge ${task.status === 'concluida' ? 'badge-success' : 'badge-warning'}">${task.status}</span></span>
+                        <span>Criada em: ${formatDate(task.data_criacao)}</span>
+                        ${task.data_conclusao ? `<span>Concluída em: ${formatDate(task.data_conclusao)}</span>` : ''}
+                    `;
+                    
+                    taskInfo.appendChild(taskTitle);
+                    taskInfo.appendChild(taskDesc);
+                    taskInfo.appendChild(taskMeta);
+                    
+                    taskItem.appendChild(taskInfo);
+                    
+                    // Adicionar botão de concluir apenas para tarefas pendentes
+                    if (task.status === 'pendente') {
+                        const taskActions = document.createElement('div');
+                        taskActions.className = 'task-actions';
+                        
+                        const completeButton = document.createElement('button');
+                        completeButton.className = 'btn btn-success';
+                        completeButton.textContent = 'Concluir';
+                        completeButton.addEventListener('click', () => completeTask(task.id));
+                        
+                        taskActions.appendChild(completeButton);
+                        taskItem.appendChild(taskActions);
+                    }
+                    
+                    taskList.appendChild(taskItem);
+                });
+                
+                // Atualizar contadores
+                loadTaskCounts();
+                
+            } catch (error) {
+                console.error('Erro ao carregar tarefas:', error);
+            } finally {
+                toggleLoader(false);
+            }
+        }
+        
+        // Função para concluir tarefa
+        async function completeTask(taskId) {
+            if (!confirm('Tem certeza que deseja marcar esta tarefa como concluída?')) {
+                return;
+            }
+            
+            toggleLoader(true);
+            
+            try {
+                await apiRequest(`/funcionario/tarefas/${taskId}/concluir`, 'PUT');
+                
+                showAlert('Tarefa concluída com sucesso!', 'success');
+                
+                // Recarregar tarefas
+                loadTasks();
+                
+            } catch (error) {
+                console.error('Erro ao concluir tarefa:', error);
+            } finally {
+                toggleLoader(false);
+            }
+        }
+        
+        // Função para carregar contadores
+        async function loadTaskCounts() {
+            try {
+                const pendingData = await apiRequest('/funcionario/tarefas/pendentes');
+                const completedData = await apiRequest('/funcionario/tarefas/concluidas');
+                
+                pendingTasksCount.textContent = pendingData.tarefas.length;
+                completedTasksCount.textContent = completedData.tarefas.length;
+                
+            } catch (error) {
+                console.error('Erro ao carregar contadores:', error);
+            }
+        }
+    });
+</script>
+{% endblock %}

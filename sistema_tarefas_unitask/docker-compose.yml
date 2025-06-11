@@ -1,0 +1,17 @@
+version: '3.8'
+
+services:
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    ports:
+      - "5000:5000"
+    # Removido o volume incorreto
+    # volumes:
+    #   - unitask_db_data:/app/database.db
+    environment:
+      SECRET_KEY: 'sua-chave-secreta-aqui-ou-use-env-file'
+
+# volumes:
+#   unitask_db_data:  # Também pode remover essa seção se não usar outros volumes

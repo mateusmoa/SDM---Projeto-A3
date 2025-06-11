@@ -1,0 +1,492 @@
+{% extends 'base.html' %}
+
+{% block title %}Painel do Gerente{% endblock %}
+
+{% block content %}
+<h1>Painel do Gerente</h1>
+
+<div class="dashboard">
+    <div class="dashboard-card">
+        <h3>Total de Funcionários</h3>
+        <div class="number" id="totalEmployeesCount">0</div>
+    </div>
+    <div class="dashboard-card">
+        <h3>Total de Supervisores</h3>
+        <div class="number" id="totalSupervisorsCount">0</div>
+    </div>
+    <div class="dashboard-card">
+        <h3>Total de Tarefas</h3>
+        <div class="number" id="totalTasksCount">0</div>
+    </div>
+    <div class="dashboard-card">
+        <h3>Taxa de Conclusão</h3>
+        <div class="number" id="completionRate">0%</div>
+    </div>
+</div>
+
+<div class="card">
+    <div class="card-header">
+        <h2>Gerenciamento de Usuários</h2>
+    </div>
+    <div class="card-body">
+        <button id="loadUsersBtn" class="btn btn-primary">Listar Usuários</button>
+        <div id="usersContainer" style="display: none; margin-top: 20px;">
+            <h3>Lista de Usuários</h3>
+            <div class="table-responsive">
+                <table class="table">
+                    <thead>
+                        <tr>
+                            <th>Nome</th>
+                            <th>Email</th>
+                            <th>Tipo</th>
+                            <th>Data de Cadastro</th>
+                            <th>Ações</th>
+                        </tr>
+                    </thead>
+                    <tbody id="usersList">
+                        <!-- Os usuários serão carregados dinamicamente aqui -->
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Modal de Confirmação de Exclusão -->
+<div id="deleteUserModal" class="modal">
+    <div class="modal-content">
+        <span class="close-modal">&times;</span>
+        <h2>Confirmar Exclusão</h2>
+        <p>Tem certeza que deseja excluir o usuário "<span id="deleteUserName"></span>"?</p>
+        <p class="text-danger">Esta ação não pode ser desfeita.</p>
+        <input type="hidden" id="deleteUserId">
+        <div class="modal-actions">
+            <button id="confirmDeleteBtn" class="btn btn-danger">Excluir</button>
+            <button id="cancelDeleteBtn" class="btn btn-secondary">Cancelar</button>
+        </div>
+    </div>
+</div>
+
+<div class="card">
+    <div class="card-header">
+        <h2>Relatórios</h2>
+    </div>
+    <div class="card-body">
+        <div class="form-group">
+            <label for="reportType">Selecione o Relatório</label>
+            <select id="reportType" class="form-control">
+                <option value="tarefas-cadastradas">Tarefas Cadastradas por Supervisor</option>
+                <option value="tarefas-pendentes">Tarefas Pendentes por Funcionário</option>
+                <option value="funcionarios-sem-tarefas-pendentes">Funcionários sem Tarefas Pendentes</option>
+                <option value="resumo-geral">Resumo Geral</option>
+            </select>
+        </div>
+        <button id="generateReportBtn" class="btn btn-primary">Gerar Relatório</button>
+    </div>
+</div>
+
+<div class="card" id="reportContainer" style="display: none;">
+    <div class="card-header">
+        <h2 id="reportTitle">Relatório</h2>
+    </div>
+    <div class="card-body" id="reportContent">
+        <!-- O conteúdo do relatório será carregado dinamicamente aqui -->
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+    document.addEventListener('DOMContentLoaded', function() {
+        const reportType = document.getElementById('reportType');
+        const generateReportBtn = document.getElementById('generateReportBtn');
+        const reportContainer = document.getElementById('reportContainer');
+        const reportTitle = document.getElementById('reportTitle');
+        const reportContent = document.getElementById('reportContent');
+        
+        const totalEmployeesCount = document.getElementById('totalEmployeesCount');
+        const totalSupervisorsCount = document.getElementById('totalSupervisorsCount');
+        const totalTasksCount = document.getElementById('totalTasksCount');
+        const completionRate = document.getElementById('completionRate');
+        
+        // Elementos para gerenciamento de usuários
+        const loadUsersBtn = document.getElementById('loadUsersBtn');
+        const usersContainer = document.getElementById('usersContainer');
+        const usersList = document.getElementById('usersList');
+        
+        // Elementos do modal de exclusão
+        const deleteUserModal = document.getElementById('deleteUserModal');
+        const deleteUserName = document.getElementById('deleteUserName');
+        const deleteUserId = document.getElementById('deleteUserId');
+        const confirmDeleteBtn = document.getElementById('confirmDeleteBtn');
+        const cancelDeleteBtn = document.getElementById('cancelDeleteBtn');
+        
+        // Fechar modal ao clicar no X
+        document.querySelectorAll('.close-modal').forEach(closeBtn => {
+            closeBtn.addEventListener('click', function() {
+                deleteUserModal.style.display = 'none';
+            });
+        });
+        
+        // Fechar modal ao clicar fora dele
+        window.addEventListener('click', function(event) {
+            if (event.target === deleteUserModal) {
+                deleteUserModal.style.display = 'none';
+            }
+        });
+        
+        // Cancelar exclusão
+        cancelDeleteBtn.addEventListener('click', function() {
+            deleteUserModal.style.display = 'none';
+        });
+        
+        // Confirmar exclusão
+        confirmDeleteBtn.addEventListener('click', function() {
+            deleteUser(deleteUserId.value);
+        });
+        
+        // Carregar resumo geral ao iniciar
+        loadSummary();
+        
+        // Gerar relatório ao clicar no botão
+        generateReportBtn.addEventListener('click', function() {
+            generateReport();
+        });
+        
+        // Carregar usuários ao clicar no botão
+        loadUsersBtn.addEventListener('click', function() {
+            loadUsers();
+        });
+        
+        // Função para carregar usuários
+        async function loadUsers() {
+            toggleLoader(true);
+            
+            try {
+                const data = await apiRequest('/gerente/usuarios');
+                
+                // Mostrar container de usuários
+                usersContainer.style.display = 'block';
+                
+                // Limpar lista de usuários
+                usersList.innerHTML = '';
+                
+                // Renderizar usuários
+                data.usuarios.forEach(user => {
+                    const row = document.createElement('tr');
+                    
+                    // Formatar tipo de usuário para exibição
+                    let userType = user.tipo.charAt(0).toUpperCase() + user.tipo.slice(1);
+                    
+                    row.innerHTML = `
+                        <td>${user.nome}</td>
+                        <td>${user.email}</td>
+                        <td>${userType}</td>
+                        <td>${formatDate(user.data_criacao)}</td>
+                        <td>
+                            <button class="btn btn-sm btn-danger delete-user-btn" data-id="${user.id}" data-name="${user.nome}">
+                                <i class="fas fa-trash"></i> Remover
+                            </button>
+                        </td>
+                    `;
+                    
+                    usersList.appendChild(row);
+                });
+                
+                // Adicionar event listeners aos botões de exclusão
+                document.querySelectorAll('.delete-user-btn').forEach(btn => {
+                    btn.addEventListener('click', function() {
+                        const userId = this.getAttribute('data-id');
+                        const userName = this.getAttribute('data-name');
+                        openDeleteModal(userId, userName);
+                    });
+                });
+                
+            } catch (error) {
+                console.error('Erro ao carregar usuários:', error);
+                showAlert('Erro ao carregar lista de usuários', 'danger');
+            } finally {
+                toggleLoader(false);
+            }
+        }
+        
+        // Função para abrir modal de exclusão
+        function openDeleteModal(userId, userName) {
+            deleteUserId.value = userId;
+            deleteUserName.textContent = userName;
+            deleteUserModal.style.display = 'block';
+        }
+        
+        // Função para excluir usuário
+        async function deleteUser(userId) {
+            toggleLoader(true);
+            
+            try {
+                const response = await apiRequest(`/gerente/usuarios/${userId}`, 'DELETE');
+                
+                showAlert(response.message, 'success');
+                
+                // Fechar modal
+                deleteUserModal.style.display = 'none';
+                
+                // Recarregar lista de usuários
+                loadUsers();
+                
+                // Atualizar resumo geral
+                loadSummary();
+                
+            } catch (error) {
+                console.error('Erro ao excluir usuário:', error);
+                showAlert(error.message || 'Erro ao excluir usuário', 'danger');
+            } finally {
+                toggleLoader(false);
+            }
+        }
+        
+        // Função para carregar resumo geral
+        async function loadSummary() {
+            toggleLoader(true);
+            
+            try {
+                const data = await apiRequest('/gerente/relatorios/resumo-geral');
+                
+                totalEmployeesCount.textContent = data.total_funcionarios;
+                totalSupervisorsCount.textContent = data.total_supervisores;
+                totalTasksCount.textContent = data.total_tarefas;
+                completionRate.textContent = data.taxa_conclusao;
+                
+            } catch (error) {
+                console.error('Erro ao carregar resumo:', error);
+                showAlert('Erro ao carregar resumo geral', 'danger');
+            } finally {
+                toggleLoader(false);
+            }
+        }
+        
+        // Função para gerar relatório
+        async function generateReport() {
+            const selectedReport = reportType.value;
+            
+            if (!selectedReport) {
+                showAlert('Selecione um tipo de relatório', 'warning');
+                return;
+            }
+            
+            toggleLoader(true);
+            
+            try {
+                const data = await apiRequest(`/gerente/relatorios/${selectedReport}`);
+                
+                // Mostrar container do relatório
+                reportContainer.style.display = 'block';
+                
+                // Definir título do relatório
+                switch (selectedReport) {
+                    case 'tarefas-cadastradas':
+                        reportTitle.textContent = 'Relatório de Tarefas Cadastradas por Supervisor';
+                        break;
+                    case 'tarefas-pendentes':
+                        reportTitle.textContent = 'Relatório de Tarefas Pendentes por Funcionário';
+                        break;
+                    case 'funcionarios-sem-tarefas-pendentes':
+                        reportTitle.textContent = 'Relatório de Funcionários sem Tarefas Pendentes';
+                        break;
+                    case 'resumo-geral':
+                        reportTitle.textContent = 'Resumo Geral';
+                        break;
+                }
+                
+                // Renderizar conteúdo do relatório
+                renderReportContent(selectedReport, data);
+                
+            } catch (error) {
+                console.error('Erro ao gerar relatório:', error);
+                showAlert('Erro ao gerar relatório: ' + error.message, 'danger');
+                reportContainer.style.display = 'none';
+            } finally {
+                toggleLoader(false);
+            }
+        }
+        
+        // Função para renderizar conteúdo do relatório
+        function renderReportContent(reportType, data) {
+            reportContent.innerHTML = '';
+            
+            switch (reportType) {
+                case 'tarefas-cadastradas':
+                    renderTasksBySupervisor(data);
+                    break;
+                case 'tarefas-pendentes':
+                    renderPendingTasksByEmployee(data);
+                    break;
+                case 'funcionarios-sem-tarefas-pendentes':
+                    renderEmployeesWithoutPendingTasks(data);
+                    break;
+                case 'resumo-geral':
+                    renderGeneralSummary(data);
+                    break;
+            }
+        }
+        
+        // Função para renderizar tarefas por supervisor
+        function renderTasksBySupervisor(data) {
+            const totalElement = document.createElement('p');
+            totalElement.innerHTML = `<strong>Total de Tarefas:</strong> ${data.total_tarefas}`;
+            reportContent.appendChild(totalElement);
+            
+            for (const supervisor in data.tarefas_por_supervisor) {
+                const supervisorSection = document.createElement('div');
+                supervisorSection.className = 'card';
+                supervisorSection.style.marginBottom = '1rem';
+                
+                const supervisorHeader = document.createElement('div');
+                supervisorHeader.className = 'card-header';
+                supervisorHeader.innerHTML = `<h3>Supervisor: ${supervisor}</h3>`;
+                
+                const supervisorBody = document.createElement('div');
+                supervisorBody.className = 'card-body';
+                
+                const tasksList = document.createElement('ul');
+                tasksList.className = 'task-list';
+                
+                data.tarefas_por_supervisor[supervisor].forEach(task => {
+                    const taskItem = document.createElement('li');
+                    taskItem.className = 'task-item';
+                    
+                    taskItem.innerHTML = `
+                        <div class="task-info">
+                            <div class="task-title">${task.titulo}</div>
+                            <div class="task-desc">${task.descricao || 'Sem descrição'}</div>
+                            <div class="task-meta">
+                                <span>Status: <span class="badge ${task.status === 'concluida' ? 'badge-success' : 'badge-warning'}">${task.status}</span></span>
+                                <span>Criada em: ${formatDate(task.data_criacao)}</span>
+                                ${task.data_conclusao ? `<span>Concluída em: ${formatDate(task.data_conclusao)}</span>` : ''}
+                            </div>
+                        </div>
+                    `;
+                    
+                    tasksList.appendChild(taskItem);
+                });
+                
+                supervisorBody.appendChild(tasksList);
+                supervisorSection.appendChild(supervisorHeader);
+                supervisorSection.appendChild(supervisorBody);
+                reportContent.appendChild(supervisorSection);
+            }
+        }
+        
+        // Função para renderizar tarefas pendentes por funcionário
+        function renderPendingTasksByEmployee(data) {
+            const totalElement = document.createElement('p');
+            totalElement.innerHTML = `<strong>Total de Tarefas Pendentes:</strong> ${data.total_tarefas_pendentes}`;
+            reportContent.appendChild(totalElement);
+            
+            for (const funcionario in data.tarefas_por_funcionario) {
+                const employeeSection = document.createElement('div');
+                employeeSection.className = 'card';
+                employeeSection.style.marginBottom = '1rem';
+                
+                const employeeHeader = document.createElement('div');
+                employeeHeader.className = 'card-header';
+                employeeHeader.innerHTML = `<h3>Funcionário: ${funcionario}</h3>`;
+                
+                const employeeBody = document.createElement('div');
+                employeeBody.className = 'card-body';
+                
+                const tasksList = document.createElement('ul');
+                tasksList.className = 'task-list';
+                
+                data.tarefas_por_funcionario[funcionario].forEach(task => {
+                    const taskItem = document.createElement('li');
+                    taskItem.className = 'task-item';
+                    
+                    taskItem.innerHTML = `
+                        <div class="task-info">
+                            <div class="task-title">${task.titulo}</div>
+                            <div class="task-desc">${task.descricao || 'Sem descrição'}</div>
+                            <div class="task-meta">
+                                <span>Criada em: ${formatDate(task.data_criacao)}</span>
+                            </div>
+                        </div>
+                    `;
+                    
+                    tasksList.appendChild(taskItem);
+                });
+                
+                employeeBody.appendChild(tasksList);
+                employeeSection.appendChild(employeeHeader);
+                employeeSection.appendChild(employeeBody);
+                reportContent.appendChild(employeeSection);
+            }
+        }
+        
+        // Função para renderizar funcionários sem tarefas pendentes
+        function renderEmployeesWithoutPendingTasks(data) {
+            const totalElement = document.createElement('p');
+            totalElement.innerHTML = `<strong>Total de Funcionários sem Tarefas Pendentes:</strong> ${data.total_funcionarios_sem_pendencias}`;
+            reportContent.appendChild(totalElement);
+            
+            const employeesList = document.createElement('ul');
+            employeesList.className = 'task-list';
+            
+            data.funcionarios.forEach(employee => {
+                const employeeItem = document.createElement('li');
+                employeeItem.className = 'task-item';
+                
+                employeeItem.innerHTML = `
+                    <div class="task-info">
+                        <div class="task-title">${employee.nome}</div>
+                        <div class="task-meta">
+                            <span>Email: ${employee.email}</span>
+                            <span>Cadastrado em: ${formatDate(employee.data_criacao)}</span>
+                        </div>
+                    </div>
+                `;
+                
+                employeesList.appendChild(employeeItem);
+            });
+            
+            reportContent.appendChild(employeesList);
+        }
+        
+        // Função para renderizar resumo geral
+        function renderGeneralSummary(data) {
+            const summaryTable = document.createElement('table');
+            summaryTable.className = 'table';
+            
+            summaryTable.innerHTML = `
+                <tr>
+                    <th>Métrica</th>
+                    <th>Valor</th>
+                </tr>
+                <tr>
+                    <td>Total de Funcionários</td>
+                    <td>${data.total_funcionarios}</td>
+                </tr>
+                <tr>
+                    <td>Total de Supervisores</td>
+                    <td>${data.total_supervisores}</td>
+                </tr>
+                <tr>
+                    <td>Total de Tarefas</td>
+                    <td>${data.total_tarefas}</td>
+                </tr>
+                <tr>
+                    <td>Tarefas Pendentes</td>
+                    <td>${data.total_tarefas_pendentes}</td>
+                </tr>
+                <tr>
+                    <td>Tarefas Concluídas</td>
+                    <td>${data.total_tarefas_concluidas}</td>
+                </tr>
+                <tr>
+                    <td>Taxa de Conclusão</td>
+                    <td>${data.taxa_conclusao}</td>
+                </tr>
+            `;
+            
+            reportContent.appendChild(summaryTable);
+        }
+    });
+</script>
+{% endblock %}

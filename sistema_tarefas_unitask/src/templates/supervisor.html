@@ -1,0 +1,529 @@
+{% extends 'base.html' %}
+
+{% block title %}Painel do Supervisor{% endblock %}
+
+{% block content %}
+<h1>Painel do Supervisor</h1>
+
+<div class="dashboard">
+    <div class="dashboard-card">
+        <h3>Total de Tarefas</h3>
+        <div class="number" id="totalTasksCount">0</div>
+    </div>
+    <div class="dashboard-card">
+        <h3>Tarefas Pendentes</h3>
+        <div class="number" id="pendingTasksCount">0</div>
+    </div>
+    <div class="dashboard-card">
+        <h3>Tarefas Concluídas</h3>
+        <div class="number" id="completedTasksCount">0</div>
+    </div>
+</div>
+
+<div class="card">
+    <div class="card-header">
+        <h2>Nova Tarefa</h2>
+    </div>
+    <div class="card-body">
+        <form id="newTaskForm">
+            <div class="form-group">
+                <label for="taskTitle">Título</label>
+                <input type="text" id="taskTitle" class="form-control" required>
+            </div>
+            <div class="form-group">
+                <label for="taskDescription">Descrição</label>
+                <textarea id="taskDescription" class="form-control" rows="3"></textarea>
+            </div>
+            <div class="form-group">
+                <label for="taskEmployee">Funcionário</label>
+                <select id="taskEmployee" class="form-control" required>
+                    <option value="">Selecione um funcionário...</option>
+                </select>
+            </div>
+            <button type="submit" class="btn btn-primary">Criar Tarefa</button>
+        </form>
+    </div>
+</div>
+
+<!-- Modal de Edição de Tarefa -->
+<div id="editTaskModal" class="modal">
+    <div class="modal-content">
+        <span class="close-modal">&times;</span>
+        <h2>Editar Tarefa</h2>
+        <form id="editTaskForm">
+            <input type="hidden" id="editTaskId">
+            <div class="form-group">
+                <label for="editTaskTitle">Título</label>
+                <input type="text" id="editTaskTitle" class="form-control" required>
+            </div>
+            <div class="form-group">
+                <label for="editTaskDescription">Descrição</label>
+                <textarea id="editTaskDescription" class="form-control" rows="3"></textarea>
+            </div>
+            <div class="form-group">
+                <label for="editTaskEmployee">Funcionário</label>
+                <select id="editTaskEmployee" class="form-control" required>
+                    <option value="">Selecione um funcionário...</option>
+                </select>
+            </div>
+            <button type="submit" class="btn btn-primary">Salvar Alterações</button>
+        </form>
+    </div>
+</div>
+
+<!-- Modal de Confirmação de Exclusão -->
+<div id="deleteTaskModal" class="modal">
+    <div class="modal-content">
+        <span class="close-modal">&times;</span>
+        <h2>Confirmar Exclusão</h2>
+        <p>Tem certeza que deseja excluir a tarefa "<span id="deleteTaskTitle"></span>"?</p>
+        <input type="hidden" id="deleteTaskId">
+        <div class="modal-actions">
+            <button id="confirmDeleteBtn" class="btn btn-danger">Excluir</button>
+            <button id="cancelDeleteBtn" class="btn btn-secondary">Cancelar</button>
+        </div>
+    </div>
+</div>
+
+<div class="card">
+    <div class="card-header">
+        <h2>Tarefas Cadastradas</h2>
+    </div>
+    <div class="card-body">
+        <div class="form-group">
+            <select id="taskFilter" class="form-control">
+                <option value="all">Todas as Tarefas</option>
+                <option value="pending">Pendentes</option>
+                <option value="completed">Concluídas</option>
+            </select>
+        </div>
+        
+        <ul class="task-list" id="taskList">
+            <!-- As tarefas serão carregadas dinamicamente aqui -->
+        </ul>
+    </div>
+</div>
+
+<div class="card">
+    <div class="card-header">
+        <h2>Funcionários</h2>
+    </div>
+    <div class="card-body">
+        <div class="form-group">
+            <select id="employeeFilter" class="form-control">
+                <option value="">Selecione um funcionário para ver suas tarefas...</option>
+            </select>
+        </div>
+        
+        <div id="employeeTasksContainer" style="display: none;">
+            <h3>Tarefas do Funcionário: <span id="employeeName"></span></h3>
+            <ul class="task-list" id="employeeTaskList">
+                <!-- As tarefas do funcionário serão carregadas dinamicamente aqui -->
+            </ul>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+    document.addEventListener('DOMContentLoaded', function() {
+        const newTaskForm = document.getElementById('newTaskForm');
+        const taskList = document.getElementById('taskList');
+        const taskFilter = document.getElementById('taskFilter');
+        const taskEmployee = document.getElementById('taskEmployee');
+        const employeeFilter = document.getElementById('employeeFilter');
+        const employeeTaskList = document.getElementById('employeeTaskList');
+        const employeeTasksContainer = document.getElementById('employeeTasksContainer');
+        const employeeName = document.getElementById('employeeName');
+        
+        const totalTasksCount = document.getElementById('totalTasksCount');
+        const pendingTasksCount = document.getElementById('pendingTasksCount');
+        const completedTasksCount = document.getElementById('completedTasksCount');
+        
+        // Elementos do modal de edição
+        const editTaskModal = document.getElementById('editTaskModal');
+        const editTaskForm = document.getElementById('editTaskForm');
+        const editTaskId = document.getElementById('editTaskId');
+        const editTaskTitle = document.getElementById('editTaskTitle');
+        const editTaskDescription = document.getElementById('editTaskDescription');
+        const editTaskEmployee = document.getElementById('editTaskEmployee');
+        
+        // Elementos do modal de exclusão
+        const deleteTaskModal = document.getElementById('deleteTaskModal');
+        const deleteTaskId = document.getElementById('deleteTaskId');
+        const deleteTaskTitle = document.getElementById('deleteTaskTitle');
+        const confirmDeleteBtn = document.getElementById('confirmDeleteBtn');
+        const cancelDeleteBtn = document.getElementById('cancelDeleteBtn');
+        
+        // Fechar modais ao clicar no X
+        document.querySelectorAll('.close-modal').forEach(closeBtn => {
+            closeBtn.addEventListener('click', function() {
+                editTaskModal.style.display = 'none';
+                deleteTaskModal.style.display = 'none';
+            });
+        });
+        
+        // Fechar modais ao clicar fora deles
+        window.addEventListener('click', function(event) {
+            if (event.target === editTaskModal) {
+                editTaskModal.style.display = 'none';
+            }
+            if (event.target === deleteTaskModal) {
+                deleteTaskModal.style.display = 'none';
+            }
+        });
+        
+        // Cancelar exclusão
+        cancelDeleteBtn.addEventListener('click', function() {
+            deleteTaskModal.style.display = 'none';
+        });
+        
+        // Confirmar exclusão
+        confirmDeleteBtn.addEventListener('click', function() {
+            deleteTask(deleteTaskId.value);
+        });
+        
+        // Carregar funcionários ao iniciar
+        loadEmployees();
+        
+        // Carregar tarefas ao iniciar
+        loadTasks();
+        
+        // Filtrar tarefas ao mudar o select
+        taskFilter.addEventListener('change', loadTasks);
+        
+        // Filtrar tarefas por funcionário
+        employeeFilter.addEventListener('change', function() {
+            const employeeId = this.value;
+            
+            if (!employeeId) {
+                employeeTasksContainer.style.display = 'none';
+                return;
+            }
+            
+            loadEmployeeTasks(employeeId);
+        });
+        
+        // Enviar formulário de nova tarefa
+        newTaskForm.addEventListener('submit', function(e) {
+            e.preventDefault();
+            createTask();
+        });
+        
+        // Enviar formulário de edição de tarefa
+        editTaskForm.addEventListener('submit', function(e) {
+            e.preventDefault();
+            updateTask();
+        });
+        
+        // Função para carregar funcionários
+        async function loadEmployees() {
+            toggleLoader(true);
+            
+            try {
+                const data = await apiRequest('/supervisor/funcionarios');
+                
+                // Limpar selects
+                taskEmployee.innerHTML = '<option value="">Selecione um funcionário...</option>';
+                editTaskEmployee.innerHTML = '<option value="">Selecione um funcionário...</option>';
+                employeeFilter.innerHTML = '<option value="">Selecione um funcionário para ver suas tarefas...</option>';
+                
+                // Adicionar funcionários aos selects
+                data.funcionarios.forEach(employee => {
+                    // Para o select de nova tarefa
+                    const taskOption = document.createElement('option');
+                    taskOption.value = employee.id;
+                    taskOption.textContent = employee.nome;
+                    taskEmployee.appendChild(taskOption);
+                    
+                    // Para o select de edição de tarefa
+                    const editOption = document.createElement('option');
+                    editOption.value = employee.id;
+                    editOption.textContent = employee.nome;
+                    editTaskEmployee.appendChild(editOption);
+                    
+                    // Para o filtro de funcionários
+                    const filterOption = document.createElement('option');
+                    filterOption.value = employee.id;
+                    filterOption.textContent = employee.nome;
+                    employeeFilter.appendChild(filterOption);
+                });
+                
+            } catch (error) {
+                console.error('Erro ao carregar funcionários:', error);
+            } finally {
+                toggleLoader(false);
+            }
+        }
+        
+        // Função para carregar tarefas
+        async function loadTasks() {
+            toggleLoader(true);
+            
+            try {
+                let endpoint = '/supervisor/tarefas';
+                const filterValue = taskFilter.value;
+                
+                if (filterValue === 'pending') {
+                    endpoint = '/supervisor/tarefas/pendentes';
+                } else if (filterValue === 'completed') {
+                    endpoint = '/supervisor/tarefas/concluidas';
+                }
+                
+                const data = await apiRequest(endpoint);
+                
+                // Limpar lista de tarefas
+                taskList.innerHTML = '';
+                
+                if (data.tarefas.length === 0) {
+                    taskList.innerHTML = '<p>Nenhuma tarefa encontrada.</p>';
+                    return;
+                }
+                
+                // Renderizar tarefas
+                renderTasks(data.tarefas, taskList);
+                
+                // Atualizar contadores
+                loadTaskCounts();
+                
+            } catch (error) {
+                console.error('Erro ao carregar tarefas:', error);
+            } finally {
+                toggleLoader(false);
+            }
+        }
+        
+        // Função para carregar tarefas de um funcionário específico
+        async function loadEmployeeTasks(employeeId) {
+            toggleLoader(true);
+            
+            try {
+                const data = await apiRequest(`/supervisor/tarefas/funcionario/${employeeId}`);
+                
+                // Mostrar container
+                employeeTasksContainer.style.display = 'block';
+                
+                // Atualizar nome do funcionário
+                employeeName.textContent = data.funcionario.nome;
+                
+                // Limpar lista de tarefas
+                employeeTaskList.innerHTML = '';
+                
+                if (data.tarefas.length === 0) {
+                    employeeTaskList.innerHTML = '<p>Este funcionário não possui tarefas.</p>';
+                    return;
+                }
+                
+                // Renderizar tarefas
+                renderTasks(data.tarefas, employeeTaskList);
+                
+            } catch (error) {
+                console.error('Erro ao carregar tarefas do funcionário:', error);
+                employeeTasksContainer.style.display = 'none';
+            } finally {
+                toggleLoader(false);
+            }
+        }
+        
+        // Função para renderizar tarefas em uma lista
+        function renderTasks(tasks, container) {
+            tasks.forEach(task => {
+                const taskItem = document.createElement('li');
+                taskItem.className = 'task-item';
+                taskItem.dataset.id = task.id;
+                
+                const taskInfo = document.createElement('div');
+                taskInfo.className = 'task-info';
+                
+                const taskTitle = document.createElement('div');
+                taskTitle.className = 'task-title';
+                taskTitle.textContent = task.titulo;
+                
+                const taskDesc = document.createElement('div');
+                taskDesc.className = 'task-desc';
+                taskDesc.textContent = task.descricao || 'Sem descrição';
+                
+                const taskMeta = document.createElement('div');
+                taskMeta.className = 'task-meta';
+                taskMeta.innerHTML = `
+                    <span>Status: <span class="badge ${task.status === 'concluida' ? 'badge-success' : 'badge-warning'}">${task.status}</span></span>
+                    <span>Criada em: ${formatDate(task.data_criacao)}</span>
+                    ${task.data_conclusao ? `<span>Concluída em: ${formatDate(task.data_conclusao)}</span>` : ''}
+                `;
+                
+                taskInfo.appendChild(taskTitle);
+                taskInfo.appendChild(taskDesc);
+                taskInfo.appendChild(taskMeta);
+                
+                // Adicionar botões de ação
+                const taskActions = document.createElement('div');
+                taskActions.className = 'task-actions';
+                
+                // Botão de editar (apenas para tarefas pendentes)
+                if (task.status !== 'concluida') {
+                    const editBtn = document.createElement('button');
+                    editBtn.className = 'btn btn-sm btn-primary';
+                    editBtn.innerHTML = '<i class="fas fa-edit"></i> Editar';
+                    editBtn.addEventListener('click', function() {
+                        openEditModal(task);
+                    });
+                    taskActions.appendChild(editBtn);
+                }
+                
+                // Botão de excluir
+                const deleteBtn = document.createElement('button');
+                deleteBtn.className = 'btn btn-sm btn-danger';
+                deleteBtn.innerHTML = '<i class="fas fa-trash"></i> Excluir';
+                deleteBtn.addEventListener('click', function() {
+                    openDeleteModal(task);
+                });
+                taskActions.appendChild(deleteBtn);
+                
+                taskItem.appendChild(taskInfo);
+                taskItem.appendChild(taskActions);
+                container.appendChild(taskItem);
+            });
+        }
+        
+        // Função para abrir modal de edição
+        function openEditModal(task) {
+            editTaskId.value = task.id;
+            editTaskTitle.value = task.titulo;
+            editTaskDescription.value = task.descricao || '';
+            editTaskEmployee.value = task.funcionario_id;
+            
+            editTaskModal.style.display = 'block';
+        }
+        
+        // Função para abrir modal de exclusão
+        function openDeleteModal(task) {
+            deleteTaskId.value = task.id;
+            deleteTaskTitle.textContent = task.titulo;
+            
+            deleteTaskModal.style.display = 'block';
+        }
+        
+        // Função para criar nova tarefa
+        async function createTask() {
+            const titulo = document.getElementById('taskTitle').value;
+            const descricao = document.getElementById('taskDescription').value;
+            const funcionario_id = document.getElementById('taskEmployee').value;
+            
+            if (!titulo || !funcionario_id) {
+                showAlert('Preencha todos os campos obrigatórios', 'warning');
+                return;
+            }
+            
+            toggleLoader(true);
+            
+            try {
+                await apiRequest('/supervisor/tarefas', 'POST', {
+                    titulo,
+                    descricao,
+                    funcionario_id
+                });
+                
+                showAlert('Tarefa criada com sucesso!', 'success');
+                
+                // Limpar formulário
+                document.getElementById('taskTitle').value = '';
+                document.getElementById('taskDescription').value = '';
+                document.getElementById('taskEmployee').value = '';
+                
+                // Recarregar tarefas
+                loadTasks();
+                
+            } catch (error) {
+                console.error('Erro ao criar tarefa:', error);
+            } finally {
+                toggleLoader(false);
+            }
+        }
+        
+        // Função para atualizar tarefa
+        async function updateTask() {
+            const id = editTaskId.value;
+            const titulo = editTaskTitle.value;
+            const descricao = editTaskDescription.value;
+            const funcionario_id = editTaskEmployee.value;
+            
+            if (!titulo || !funcionario_id) {
+                showAlert('Preencha todos os campos obrigatórios', 'warning');
+                return;
+            }
+            
+            toggleLoader(true);
+            
+            try {
+                await apiRequest(`/supervisor/tarefas/${id}`, 'PUT', {
+                    titulo,
+                    descricao,
+                    funcionario_id
+                });
+                
+                showAlert('Tarefa atualizada com sucesso!', 'success');
+                
+                // Fechar modal
+                editTaskModal.style.display = 'none';
+                
+                // Recarregar tarefas
+                loadTasks();
+                
+                // Se estiver visualizando tarefas de um funcionário específico, recarregar também
+                if (employeeFilter.value) {
+                    loadEmployeeTasks(employeeFilter.value);
+                }
+                
+            } catch (error) {
+                console.error('Erro ao atualizar tarefa:', error);
+            } finally {
+                toggleLoader(false);
+            }
+        }
+        
+        // Função para excluir tarefa
+        async function deleteTask(id) {
+            toggleLoader(true);
+            
+            try {
+                await apiRequest(`/supervisor/tarefas/${id}`, 'DELETE');
+                
+                showAlert('Tarefa excluída com sucesso!', 'success');
+                
+                // Fechar modal
+                deleteTaskModal.style.display = 'none';
+                
+                // Recarregar tarefas
+                loadTasks();
+                
+                // Se estiver visualizando tarefas de um funcionário específico, recarregar também
+                if (employeeFilter.value) {
+                    loadEmployeeTasks(employeeFilter.value);
+                }
+                
+            } catch (error) {
+                console.error('Erro ao excluir tarefa:', error);
+            } finally {
+                toggleLoader(false);
+            }
+        }
+        
+        // Função para carregar contadores
+        async function loadTaskCounts() {
+            try {
+                const allData = await apiRequest('/supervisor/tarefas');
+                const pendingData = await apiRequest('/supervisor/tarefas/pendentes');
+                const completedData = await apiRequest('/supervisor/tarefas/concluidas');
+                
+                totalTasksCount.textContent = allData.tarefas.length;
+                pendingTasksCount.textContent = pendingData.tarefas.length;
+                completedTasksCount.textContent = completedData.tarefas.length;
+                
+            } catch (error) {
+                console.error('Erro ao carregar contadores:', error);
+            }
+        }
+    });
+</script>
+{% endblock %}
